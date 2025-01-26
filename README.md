@@ -1,1 +1,1 @@
-# salmar-d365-mtps
+# Salmar integration D365 - Maritech P&S
