@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "salmar_d365_mtps_convertor": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7228",
+      "launchBrowser": false
+    }
+  }
+}
