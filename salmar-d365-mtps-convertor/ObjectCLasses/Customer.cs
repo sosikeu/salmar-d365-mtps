@@ -21,8 +21,10 @@ namespace salmar_d365_mtps_convertor
         public string CurrencyCode { get; set; }
         public int LanguageCode { get; set; }
         public string OrganizationNo { get; set; }
+        public string EORINo { get; set; }
+        public string VATNo { get; set; }
         public int SubjectToVAT { get; set; }
-        //P&S removed: public int CorporateCustomer { get; set; }
+        public int CorporateCustomer { get; set; }
         //public string ExtCustomerNo { get; set; }
         public decimal CreditLimit { get; set; }
         //P&S removed: public string CreditLimitDate { get; set; }

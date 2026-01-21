@@ -2,22 +2,27 @@
 {
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
-    using Microsoft.Azure.WebJobs.Extensions.Http;
     using Microsoft.Azure.WebJobs;
+    using Microsoft.Azure.WebJobs.Extensions.Http;
     using Microsoft.Extensions.Logging;
+
+    using neu_d365mtinteg_convertor;
+
     using Newtonsoft.Json;
 
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics.Metrics;
     using System.IO;
     using System.Linq;
     using System.Numerics;
     using System.Text;
-    using System.Text.Json;
+    //using System.Text.Json;
     using System.Threading.Tasks;
-    using System.Xml.Serialization;
     using System.Xml;
-    using System.Diagnostics.Metrics;
+    using System.Xml.Serialization;
+
+    using static System.Runtime.InteropServices.JavaScript.JSType;
 
     public static class Convertor
     {
@@ -37,13 +42,25 @@
                 byte[] data = Convert.FromBase64String(requestBody);
                 string ReqString = Encoding.UTF8.GetString(data);
 
-                JsonDocument d = JsonDocument.Parse(ReqString);
-
+                //JsonDocument d = JsonDocument.Parse(ReqString);
+                dynamic RequestJSON = JsonConvert.DeserializeObject(ReqString);
+                /*
                 Dictionary<string, CustomerD365> CustomersD365 = JsonConvert.DeserializeObject<List<CustomerD365>>(d.RootElement.GetProperty("CustomersD365").ToString()).ToDictionary(k => k.CustomerAccount.Trim().ToUpper());
                 List<GuaranteeInsuranceD365> GuaranteesInsurancesD365 = JsonConvert.DeserializeObject<List<GuaranteeInsuranceD365>>(d.RootElement.GetProperty("GuaranteesInsurancesD365").ToString()).ToList();
                 Dictionary<string, EmployeeD365> EmployeesD365 = JsonConvert.DeserializeObject<List<EmployeeD365>>(d.RootElement.GetProperty("EmployeesD365").ToString()).ToDictionary(k => k.PersonnelNumber);
                 Dictionary<Int64, Customer> CustomersMaritechPersistent = JsonConvert.DeserializeObject<List<Customer>>(d.RootElement.GetProperty("CustomersMaritechPersistent").ToString()).ToDictionary(k => k.CustomerNo);
                 string ClientNo = JsonConvert.DeserializeObject<string>(d.RootElement.GetProperty("ClientNo").ToString());
+                */
+                string R_CustomersD365 = RequestJSON.CustomersD365.ToString();
+                Dictionary<string, CustomerD365> CustomersD365 = JsonConvert.DeserializeObject<List<CustomerD365>>(R_CustomersD365).ToDictionary(k => k.CustomerAccount.Trim().ToUpper());
+                string R_GuaranteesInsurancesD365 = RequestJSON.GuaranteesInsurancesD365.ToString();
+                List<GuaranteeInsuranceD365> GuaranteesInsurancesD365 = JsonConvert.DeserializeObject<List<GuaranteeInsuranceD365>>(R_GuaranteesInsurancesD365).ToList();
+                string R_EmployeesD365 = RequestJSON.EmployeesD365.ToString();
+                Dictionary<string, EmployeeD365> EmployeesD365 = JsonConvert.DeserializeObject<List<EmployeeD365>>(R_EmployeesD365).ToDictionary(k => k.PersonnelNumber);
+                string R_CustomersMaritechPersistent = RequestJSON.CustomersMaritechPersistent.ToString();
+                Dictionary<Int64, Customer> CustomersMaritechPersistent = JsonConvert.DeserializeObject<List<Customer>>(R_CustomersMaritechPersistent).ToDictionary(k => k.CustomerNo);
+                string ClientNo = RequestJSON.ClientNo.ToString();
+
                 //List<Customer> CustomersMaritechPersistent = JsonConvert.DeserializeObject<List<Customer>>(d.RootElement.GetProperty("CustomersMaritechPersistent").ToString());
 
                 #endregion
@@ -94,6 +111,7 @@
                             cm.City = cd.AddressCity.Trim();
                             //P&S removed: 
                             //cm.CorporateCustomer = (cd.CustomerGroupId.Trim() == "40" ? 1 : 0); // as per clarification 2022-01-13
+                            cm.CorporateCustomer = (cd.CustomerGroupId.Trim() == "40" ? 1 : 0); //added 2026-01-09
                             cm.CountryCode = cd.AddressCountryRegionISOCode.Trim();
                             cm.CurrencyCode = cd.SalesCurrencyCode.Trim();
                             
@@ -108,11 +126,58 @@
                             #endregion
                             
                             cm.Name = cd.OrganizationName.Trim();
-                            cm.OrganizationNo = cd.TaxExemptNumber.Trim(); // as per clarification 2022-01-13
-                                                                           //cm.PostalCode = (cd.AddressCountryRegionISOCode.Trim().ToUpper() == "NO" ? cd.AddressZipCode.Trim() : null);
+                            //cm.OrganizationNo = cd.TaxExemptNumber.Trim(); // as per clarification 2022-01-13
+
+
+                            //added 2026-01-09, 2026-01-19 removed:
+                            //NO123456789MVA -> 123456789
+                            /*
+                            #region OrganizationNo
+                            if (cd.TaxExemptNumber.Trim().ToLower().StartsWith("no"))
+                            {
+                                try
+                                {
+                                    cm.OrganizationNo = string.Join("",cd.TaxExemptNumber.Trim().Where(char.IsDigit).ToArray());
+                                }
+                                catch { }
+                            }
+                            #endregion
+                            */
+                            //added 2026-01-20:
+                            //NO123456789MVA -> 123456789; 123456789 -> 123456789
+                            #region OrganizationNo
+                            if ((cd.AddressCountryRegionISOCode?.Trim().ToUpper()??"") == "NO")
+                            {
+                                if (cd.TaxExemptNumber.Trim().ToLower().StartsWith("no"))
+                                { 
+                                    try
+                                    {
+                                        cm.OrganizationNo = string.Join("", cd.TaxExemptNumber.Trim().Where(char.IsDigit).ToArray());
+                                    }
+                                    catch { }
+                                }
+                                else
+                                {
+                                    try
+                                    {
+                                        cm.OrganizationNo = (cd.TaxExemptNumber?.Trim() ?? "");
+                                    }
+                                    catch { }
+                                }
+                            }
+                            else
+                            {
+                                cm.OrganizationNo = " ";
+                            }
+                            #endregion
+
+                            //2026-01-20 cm.EORINo = cd.IdentificationNumber.Trim().ToUpper(); //added 2026-01-09
+                            cm.EORINo = ((cd.IdentificationNumber == "" || cd.IdentificationNumber == null) ? " " : cd.IdentificationNumber.Trim().ToUpper()); //added 2026-01-20
+
+                            cm.VATNo = cd.TaxExemptNumber.Trim(); //added 2026-01-09
+                            //cm.PostalCode = (cd.AddressCountryRegionISOCode.Trim().ToUpper() == "NO" ? cd.AddressZipCode.Trim() : null);
                             cm.PostalCode = (cd.AddressZipCode.Trim() == "" ? "0" : cd.AddressZipCode.Trim());
-                            //P&S removed: 
-                            
+
                             #region RefSalesPerson
                             if (EmployeesD365.ContainsKey((cd.EmployeeResponsibleNumber ?? "")))
                             {
@@ -342,7 +407,7 @@
                 return new BadRequestObjectResult($"ConvertAndCompareCustomers files error: {ex.Message}");
             }
         }
-        
+
         [FunctionName("ConvertAndCompareVendors")]
         public static async Task<IActionResult> ConvertAndCompareVendors([HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req, ILogger log)
         {
@@ -359,14 +424,26 @@
                 byte[] data = Convert.FromBase64String(requestBody);
                 string ReqString = Encoding.UTF8.GetString(data);
 
-                JsonDocument d = JsonDocument.Parse(ReqString);
+                //JsonDocument d = JsonDocument.Parse(ReqString);
+                dynamic RequestJSON = JsonConvert.DeserializeObject(ReqString);
 
+                /*
                 //Get only those vendors, where MBSMarkedForTransfer == "yes"
                 Dictionary<string, VendorD365> VendorssD365 = JsonConvert.DeserializeObject<List<VendorD365>>(d.RootElement.GetProperty("VendorsD365").ToString()).Where(v => v.MBSMarkedForTransfer.ToLower() == "yes").ToDictionary(k => k.VendorAccountNumber);
                 //Dictionary<string, VendorD365> VendorssD365 = JsonConvert.DeserializeObject<List<VendorD365>>(d.RootElement.GetProperty("VendorsD365").ToString()).ToDictionary(k => k.VendorAccountNumber);
                 List<VendorBankAccountD365> VendorBankAccountsD365 = JsonConvert.DeserializeObject<List<VendorBankAccountD365>>(d.RootElement.GetProperty("VendorBankAccountsD365").ToString());
                 Dictionary<Int64, Vendor> VendorsMaritechPersistent = JsonConvert.DeserializeObject<List<Vendor>>(d.RootElement.GetProperty("VendorsMaritechPersistent").ToString()).ToDictionary(k => k.VendorNo);
                 string ClientNo = JsonConvert.DeserializeObject<string>(d.RootElement.GetProperty("ClientNo").ToString());
+                */
+
+                string R_VendorsD365 = RequestJSON.VendorsD365.ToString();
+                Dictionary<string, VendorD365> VendorssD365 = JsonConvert.DeserializeObject<List<VendorD365>>(R_VendorsD365).Where(v => v.MBSMarkedForTransfer.ToLower() == "yes").ToDictionary(k => k.VendorAccountNumber);
+                //Dictionary<string, VendorD365> VendorssD365 = JsonConvert.DeserializeObject<List<VendorD365>>(d.RootElement.GetProperty("VendorsD365").ToString()).ToDictionary(k => k.VendorAccountNumber);
+                string R_VendorBankAccountsD365 = RequestJSON.VendorBankAccountsD365.ToString();
+                List<VendorBankAccountD365> VendorBankAccountsD365 = JsonConvert.DeserializeObject<List<VendorBankAccountD365>>(R_VendorBankAccountsD365);
+                string R_VendorsMaritechPersistent = RequestJSON.VendorsMaritechPersistent.ToString();
+                Dictionary<Int64, Vendor> VendorsMaritechPersistent = JsonConvert.DeserializeObject<List<Vendor>>(R_VendorsMaritechPersistent).ToDictionary(k => k.VendorNo);
+                string ClientNo = JsonConvert.DeserializeObject<string>(RequestJSON.ClientNo.ToString());
 
                 #endregion
 
@@ -630,7 +707,7 @@
                 return new BadRequestObjectResult($"ConvertAndCompareVendors files error: {ex.Message}");
             }
         }
-        
+
         [FunctionName("ConvertPostedEntriesV2")]
         public static async Task<IActionResult> ConvertPostedEntriesV2([HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req, ILogger log)
         {
@@ -693,7 +770,7 @@
                         MTPostedEntry MTPEntry = mtDoc[DocumentNr].postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK")).FirstOrDefault();
                         try
                         {
-                            SALESORDERHEADERV2ENTITY SalesOrderHeaderXML = ConvertSalesOrder(DocumentNr, mtDoc[DocumentNr], CustomersD365, VATmaps, ShiftDateOlderThan, ShiftDateChangeTo, RequestObj.OverrideSalesOrderLineSalesTaxItemGroupCode, RequestObj.OverrideSalesOrderLineItemNo, ExchangeRatesD365);
+                            SALESORDERHEADERV2ENTITY SalesOrderHeaderXML = ConvertSalesOrder(DocumentNr, mtDoc[DocumentNr], CustomersD365, VATmaps, ShiftDateOlderThan, ShiftDateChangeTo, RequestObj.OverrideSalesOrderLineSalesTaxItemGroupCode, RequestObj.OverrideSalesOrderLineItemNo, ExchangeRatesD365, RequestObj.DimensionIntegrationFormats);
                             string XMLstr = $"<Document>{XMLStringFromObject(SalesOrderHeaderXML)}</Document>";
                             RES.ConvertedSalesOrders.Add(
                                 new ConversionResultMessageV2
@@ -738,7 +815,7 @@
                         List<MTPostedEntry> MTPEntries = mtDoc[DocumentNr].postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "L" && (p.DocumentType.Trim().ToUpper() == "KF" || p.DocumentType.Trim().ToUpper() == "KK")).ToList();
                         try
                         {
-                            PURCHPURCHASEORDERHEADERV2ENTITY PurchaseOrderHeaderXML = ConvertPurchaseOrder(DocumentNr, mtDoc[DocumentNr], VendorsD365, VATmaps, ShiftDateOlderThan, ShiftDateChangeTo, ExchangeRatesD365, PurchaseOrderMultiHeaderPoolId);
+                            PURCHPURCHASEORDERHEADERV2ENTITY PurchaseOrderHeaderXML = ConvertPurchaseOrder(DocumentNr, mtDoc[DocumentNr], VendorsD365, VATmaps, ShiftDateOlderThan, ShiftDateChangeTo, ExchangeRatesD365, PurchaseOrderMultiHeaderPoolId, RequestObj.DimensionIntegrationFormats);
                             string XMLstr = $"<Document>{XMLStringFromObject(PurchaseOrderHeaderXML)}</Document>";
                             RES.ConvertedPurchaseOrders.Add(
                                 new ConversionResultMessageV2
@@ -793,7 +870,7 @@
                         RunCnt++;
                         try
                         {
-                            LEDGERJOURNALENTITY GLEntry = ConvertGLEntry(DocumentNr, mtDoc[DocumentNr], ExchangeRatesD365, GLEntryDescription, GLEntryLineNr);
+                            LEDGERJOURNALENTITY GLEntry = ConvertGLEntry(DocumentNr, mtDoc[DocumentNr], ExchangeRatesD365, GLEntryDescription, GLEntryLineNr, RequestObj.DimensionIntegrationFormats);
                             foreach (LedgerJournalEntityLine GLEntryLine in GLEntry.LedgerJournalEntityLines)
                             {
                                 GLEntryLineNr++;
@@ -900,7 +977,56 @@
                 return new BadRequestObjectResult($"ConvertPostedEntries files error: {ex.Message}");
             }
         }
-        
+
+        [FunctionName("ZIPme")]
+        public static async Task<IActionResult> ZipMe(
+            [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            log.LogInformation($"ZIPme HTTP triggered {req.Method} request");
+            try
+            {
+                log.LogInformation("Get reqest..");
+                string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+                log.LogInformation("Get files..");
+                PackFile[] FilesToPack = JsonConvert.DeserializeObject<PackFile[]>(requestBody);
+                Packer packer = new Packer();
+                log.LogInformation("Zip files..");
+                return new FileContentResult(packer.PackerZIP(FilesToPack).ToArray(), "application/octet-stream");
+            }
+            catch (Exception ex)
+            {
+                log.LogInformation($"ZIP files error: {ex.Message}");
+                return new BadRequestObjectResult($"ZIP files error: {ex.Message}");
+            }
+        }
+
+        [FunctionName("UNZIPme")]
+        public static async Task<IActionResult> UnZipMe(
+           [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
+           ILogger log)
+        {
+            log.LogInformation($"UNZIPme HTTP triggered {req.Method} request");
+            try
+            {
+                log.LogInformation("Get request..");
+                string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+                PackFile ZIPArchive = JsonConvert.DeserializeObject<PackFile>(requestBody);
+                log.LogInformation("Get file..");
+                byte[] zipBuffer = Convert.FromBase64String(ZIPArchive.FileContentBase64String);
+                log.LogInformation("Get bytes..");
+                Packer packer = new Packer();
+                log.LogInformation("Unzip..");
+                List<PackFile> UnzippedArchive = packer.PackerUNZIP(zipBuffer);
+                return new OkObjectResult(JsonConvert.SerializeObject(UnzippedArchive));
+            }
+            catch (Exception ex)
+            {
+                log.LogInformation($"UNZIP files error: {ex.Message}");
+                return new BadRequestObjectResult($"UNZIP file error: {ex.Message}");
+            }
+        }
+
         private static MTPostedEntriesRequestObject ProcessInput(string requestBody)
         {
             MTPostedEntriesRequestObject RES = new MTPostedEntriesRequestObject();
@@ -920,16 +1046,20 @@
             byte[] data = Convert.FromBase64String(requestBody);
             string ReqString = Encoding.UTF8.GetString(data);
 
-            JsonDocument d = JsonDocument.Parse(ReqString);
+            //JsonDocument d = JsonDocument.Parse(ReqString);
 
-            List<MTMessage> MTMessagesPostedEntries = JsonConvert.DeserializeObject<List<MTMessage>>(d.RootElement.GetProperty("MessagesPostedEntries").ToString()).ToList();
-            List<MTMessage> MTMessagesFakturaXML = JsonConvert.DeserializeObject<List<MTMessage>>(d.RootElement.GetProperty("MessagesFakturaXML").ToString()).ToList();
+            dynamic RequestJSON = JsonConvert.DeserializeObject(ReqString);
+            string R_MTMessagesPostedEntries = RequestJSON.MessagesPostedEntries.ToString();
+            List<MTMessage> MTMessagesPostedEntries = JsonConvert.DeserializeObject<List<MTMessage>>(R_MTMessagesPostedEntries).ToList();
+            string R_MTMessagesFakturaXML = RequestJSON.MessagesFakturaXML.ToString();
+            List<MTMessage> MTMessagesFakturaXML = JsonConvert.DeserializeObject<List<MTMessage>>(R_MTMessagesFakturaXML).ToList();
 
             //Request from Thomas for Migration
             string ShiftDateOlderThanStr = "";
             try
             {
-                ShiftDateOlderThanStr = d.RootElement.GetProperty("ShiftDateOlderThan").ToString();
+                //ShiftDateOlderThanStr = d.RootElement.GetProperty("ShiftDateOlderThan").ToString();
+                ShiftDateOlderThanStr = RequestJSON.ShiftDateOlderThan.ToString();
                 RES.ShiftDateOlderThan = DateTime.Parse(ShiftDateOlderThanStr);
             }
             catch (Exception ex)
@@ -937,50 +1067,72 @@
             string ShiftDateChangeToStr = "";
             try
             {
-                ShiftDateChangeToStr = d.RootElement.GetProperty("ShiftDateChangeTo").ToString();
+                //ShiftDateChangeToStr = d.RootElement.GetProperty("ShiftDateChangeTo").ToString();
+                ShiftDateChangeToStr = RequestJSON.ShiftDateChangeTo.ToString();
                 RES.ShiftDateChangeTo = DateTime.Parse(ShiftDateChangeToStr);
             }
             catch (Exception ex)
             { }
             try
             {
-                RES.VATmaps = JsonConvert.DeserializeObject<List<VATmap>>(d.RootElement.GetProperty("VATmap").ToString()).ToList();
+                //RES.VATmaps = JsonConvert.DeserializeObject<List<VATmap>>(d.RootElement.GetProperty("VATmap").ToString()).ToList();
+                string R_VATmap = RequestJSON.VATmap.ToString();
+                RES.VATmaps = JsonConvert.DeserializeObject<List<VATmap>>(R_VATmap).ToList();
             }
             catch (Exception ex)
             { }
             try
             {
-                RES.CustomersD365 = JsonConvert.DeserializeObject<List<CustomerD365>>(d.RootElement.GetProperty("CustomersD365").ToString()).ToDictionary(c => c.CustomerAccount.Trim().ToUpper());
+                //RES.CustomersD365 = JsonConvert.DeserializeObject<List<CustomerD365>>(d.RootElement.GetProperty("CustomersD365").ToString()).ToDictionary(c => c.CustomerAccount.Trim().ToUpper());
+                string R_CustomersD365 = RequestJSON.CustomersD365.ToString();
+                RES.CustomersD365 = JsonConvert.DeserializeObject<List<CustomerD365>>(R_CustomersD365).ToDictionary(c => c.CustomerAccount.Trim().ToUpper());
             }
             catch (Exception ex)
             { }
             try
             {
-                RES.VendorsD365 = JsonConvert.DeserializeObject<List<VendorD365>>(d.RootElement.GetProperty("VendorsD365").ToString()).ToDictionary(c => c.VendorAccountNumber.Trim().ToUpper());
+                //RES.VendorsD365 = JsonConvert.DeserializeObject<List<VendorD365>>(d.RootElement.GetProperty("VendorsD365").ToString()).ToDictionary(c => c.VendorAccountNumber.Trim().ToUpper());
+                string R_VendorsD365 = RequestJSON.VendorsD365.ToString();
+                RES.VendorsD365 = JsonConvert.DeserializeObject<List<VendorD365>>(R_VendorsD365).ToDictionary(c => c.VendorAccountNumber.Trim().ToUpper());
             }
             catch (Exception ex)
             { }
             try
             {
-                RES.OverrideSalesOrderLineItemNo = d.RootElement.GetProperty("OverrideSalesOrderLineItemNo").ToString();
+                //RES.OverrideSalesOrderLineItemNo = d.RootElement.GetProperty("OverrideSalesOrderLineItemNo").ToString();
+                string R_OverrideSalesOrderLineItemNo = RequestJSON.OverrideSalesOrderLineItemNo.ToString();
+                RES.OverrideSalesOrderLineItemNo = R_OverrideSalesOrderLineItemNo;
             }
             catch (Exception ex)
             { }
             try
             {
-                RES.OverrideSalesOrderLineSalesTaxItemGroupCode = d.RootElement.GetProperty("OverrideSalesOrderLineSalesTaxItemGroupCode").ToString();
+                //RES.OverrideSalesOrderLineSalesTaxItemGroupCode = d.RootElement.GetProperty("OverrideSalesOrderLineSalesTaxItemGroupCode").ToString();
+                RES.OverrideSalesOrderLineSalesTaxItemGroupCode = RequestJSON.OverrideSalesOrderLineSalesTaxItemGroupCode.ToString();
             }
             catch (Exception ex)
             { }
             try
             {
-                RES.ExchangeRatesD365 = JsonConvert.DeserializeObject<List<ExchangeRateD365>>(d.RootElement.GetProperty("ExchangeRates").ToString()).ToDictionary(c => c.FromCurrency.Trim().ToUpper());
+                //RES.ExchangeRatesD365 = JsonConvert.DeserializeObject<List<ExchangeRateD365>>(d.RootElement.GetProperty("ExchangeRates").ToString()).ToDictionary(c => c.FromCurrency.Trim().ToUpper());
+                string R_ExchangeRates = RequestJSON.ExchangeRates.ToString();
+                RES.ExchangeRatesD365 = JsonConvert.DeserializeObject<List<ExchangeRateD365>>(R_ExchangeRates).ToDictionary(c => c.FromCurrency.Trim().ToUpper());
             }
             catch (Exception ex)
             { }
             try
             {
-                RES.PurchaseOrderMultiHeaderPoolId = d.RootElement.GetProperty("PurchaseOrderMultiHeaderPoolId").ToString();
+                //RES.PurchaseOrderMultiHeaderPoolId = d.RootElement.GetProperty("PurchaseOrderMultiHeaderPoolId").ToString();
+                string R_PurchaseOrderMultiHeaderPoolId = RequestJSON.PurchaseOrderMultiHeaderPoolId.ToString();
+                RES.PurchaseOrderMultiHeaderPoolId = R_PurchaseOrderMultiHeaderPoolId;
+            }
+            catch (Exception ex)
+            { }
+            try
+            {
+                //RES.DimensionIntegrationFormats = JsonConvert.DeserializeObject<List<DimensionIntegrationFormat>>(d.RootElement.GetProperty("DimensionIntegrationFormats").ToString()).ToDictionary(c => c.DimensionFormatType.Trim());
+                string R_DimensionIntegrationFormats = RequestJSON.DimensionIntegrationFormats.ToString();
+                RES.DimensionIntegrationFormats = JsonConvert.DeserializeObject<List<DimensionIntegrationFormat>>(R_DimensionIntegrationFormats).ToDictionary(c => c.DimensionFormatType.Trim());
             }
             catch (Exception ex)
             { }
@@ -1055,7 +1207,7 @@
 
             return RES;
         }
-        private static SALESORDERHEADERV2ENTITY ConvertSalesOrder(string DocumentNr, MTDocument mtDoc, Dictionary<string, CustomerD365> CustomersD365, List<VATmap> VATMaps, DateTime? ShiftDateOlderThan, DateTime? ShiftDateChangeTo, string OverrideSalesOrderLineSalesTaxItemGroupCode, string OverrideSalesOrderLineItemNo, Dictionary<string, ExchangeRateD365> ExchangeRatesD365)
+        private static SALESORDERHEADERV2ENTITY ConvertSalesOrder(string DocumentNr, MTDocument mtDoc, Dictionary<string, CustomerD365> CustomersD365, List<VATmap> VATMaps, DateTime? ShiftDateOlderThan, DateTime? ShiftDateChangeTo, string OverrideSalesOrderLineSalesTaxItemGroupCode, string OverrideSalesOrderLineItemNo, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats)
         {
             SALESORDERHEADERV2ENTITY SalesOrderHeaderXML = new SALESORDERHEADERV2ENTITY();
             SalesOrderHeaderXML.SalesOrderLineV2Entity = new List<SALESORDERLINEV2ENTITY>();
@@ -1165,7 +1317,7 @@
                 { }
             }
 
-            SalesOrderHeaderXML.MBSMARITECHPAYMID = MTPEntry.KID.Trim();
+            SalesOrderHeaderXML.MBSMARITECHPAYMID = MTPEntry.KID?.Trim()??"";
             SalesOrderHeaderXML.MBSMARITECHSALESID = DocumentNr.Trim();
             //SalesOrderHeaderXML.MBSQTY = (TotalQTY == 0 ? "" : TotalQTY.ToString());
             SalesOrderHeaderXML.MBSQTY = TotalQTY;
@@ -1215,6 +1367,38 @@
 
                 #endregion
 
+                #region DEFAULTLEDGERDIMENSIONDISPLAYVALUE
+
+                string DefaultLedgerDimensionDisplayValue = $"--{postedEntryLine.DepartmentNo?.Trim().ToUpper()??""}-{Baerer}---{Motpart}---";
+                if (DimensionIntegrationFormats != null && DimensionIntegrationFormats.Keys.Contains("DataEntityDefaultDimensionFormat"))
+                {
+                    //Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
+                    string[] FinancialDimensionFormatDefinitions = DimensionIntegrationFormats["DataEntityDefaultDimensionFormat"].FinancialDimensionFormat.Split("-");
+                    List<string> FinancialDimensionValues = new List<string>();
+                    foreach (string FinancialDimension in FinancialDimensionFormatDefinitions)
+                    {
+                        if (FinancialDimension == "Avdeling")
+                        {
+                            FinancialDimensionValues.Add(postedEntryLine.DepartmentNo?.Trim().ToUpper()??"");
+                        }
+                        else if (FinancialDimension == "Baerer")
+                        {
+                            FinancialDimensionValues.Add(Baerer);
+                        }
+                        else if (FinancialDimension == "Motpart")
+                        {
+                            FinancialDimensionValues.Add(Motpart);
+                        }
+                        else
+                        {
+                            FinancialDimensionValues.Add("");
+                        }
+                    }
+                    DefaultLedgerDimensionDisplayValue = string.Join("-", FinancialDimensionValues);
+                }
+
+                #endregion
+
                 SALESORDERLINEV2ENTITY SalesOrderLineXML = new SALESORDERLINEV2ENTITY
                 {
                     #region fixed values
@@ -1233,7 +1417,13 @@
                     //2022-03-29: MainAccount-Avdeling-Generasjon-Aktivitet-Anleggsstatus-Baerer-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling-Art
                     //2022-03-31: MainAccount-Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
                     //2022-04-27: Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
-                    DEFAULTLEDGERDIMENSIONDISPLAYVALUE = $"--{postedEntryLine.DepartmentNo.Trim().ToUpper()}-{Baerer}---{Motpart}---",
+
+
+                    //2025-04-16: Dynamic FinancialDimensionFormats
+                    ////Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
+
+                    DEFAULTLEDGERDIMENSIONDISPLAYVALUE = DefaultLedgerDimensionDisplayValue,
+
                     //ITEMNUMBER = postedEntryLine.AccountNo.Trim().ToUpper(),
                     //2022-05-22: Request from Thomas for migration
                     ITEMNUMBER = (OverrideSalesOrderLineItemNo != "" && OverrideSalesOrderLineItemNo != null ? OverrideSalesOrderLineItemNo : postedEntryLine.AccountNo.Trim().ToUpper()),
@@ -1254,7 +1444,10 @@
 
                     //SALESTAXITEMGROUPCODE = (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : postedEntryLine.VATCode))
                     //2022-05-22: Request from Thomas for migration
-                    SALESTAXITEMGROUPCODE = (OverrideSalesOrderLineSalesTaxItemGroupCode != "" && OverrideSalesOrderLineSalesTaxItemGroupCode != null ? OverrideSalesOrderLineSalesTaxItemGroupCode : (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : postedEntryLine.VATCode)))
+
+                    //2026-01-20: postedEntryLine.VATCode null handling
+                    //SALESTAXITEMGROUPCODE = (OverrideSalesOrderLineSalesTaxItemGroupCode != "" && OverrideSalesOrderLineSalesTaxItemGroupCode != null ? OverrideSalesOrderLineSalesTaxItemGroupCode : (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : postedEntryLine.VATCode)))
+                    SALESTAXITEMGROUPCODE = (OverrideSalesOrderLineSalesTaxItemGroupCode != "" && OverrideSalesOrderLineSalesTaxItemGroupCode != null ? OverrideSalesOrderLineSalesTaxItemGroupCode : (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : (postedEntryLine.VATCode ?? ""))))
                     #endregion
                 };
                 SalesOrderHeaderXML.SalesOrderLineV2Entity.Add(SalesOrderLineXML);
@@ -1264,7 +1457,7 @@
 
             return SalesOrderHeaderXML;
         }
-        private static PURCHPURCHASEORDERHEADERV2ENTITY ConvertPurchaseOrder(string DocumentNr, MTDocument mtDoc, Dictionary<string, VendorD365> VendorsD365, List<VATmap> VATMaps, DateTime? ShiftDateOlderThan, DateTime? ShiftDateChangeTo, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, string PurchaseOrderMultiHeaderPoolId)
+        private static PURCHPURCHASEORDERHEADERV2ENTITY ConvertPurchaseOrder(string DocumentNr, MTDocument mtDoc, Dictionary<string, VendorD365> VendorsD365, List<VATmap> VATMaps, DateTime? ShiftDateOlderThan, DateTime? ShiftDateChangeTo, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, string PurchaseOrderMultiHeaderPoolId, Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats)
         {
             PURCHPURCHASEORDERHEADERV2ENTITY PurchaseOrderHeaderXML = new PURCHPURCHASEORDERHEADERV2ENTITY();
             PurchaseOrderHeaderXML.PurchaseOrderLineV2Entities = new List<PURCHPURCHASEORDERLINEV2ENTITY>();
@@ -1359,7 +1552,7 @@
 
             PurchaseOrderHeaderXML.REQUESTEDDELIVERYDATE = MTPEntryHeaderMaster.DocumentDate;
             PurchaseOrderHeaderXML.SALESTAXGROUPCODE = VendorsD365[$"{HeaderVendorNumber:00000}"].SalesTaxGroupCode;
-            PurchaseOrderHeaderXML.MBSMARITECHPAYMID = MTPEntryHeaderMaster.KID;
+            PurchaseOrderHeaderXML.MBSMARITECHPAYMID = (MTPEntryHeaderMaster.KID?.Trim() ?? "");
 
             PurchaseOrderHeaderXML.MBSCURRENCYHEDGE = (MTPEntryHeaderMaster.CurrencyHedged == "1" ? "Yes" : "No");
             PurchaseOrderHeaderXML.MBSFROMMARITECH = "Yes";
@@ -1537,6 +1730,38 @@
                 }
                 #endregion
 
+                #region DEFAULTLEDGERDIMENSIONDISPLAYVALUE
+
+                string DefaultLedgerDimensionDisplayValue = $"--{postedEntryLine.DepartmentNo?.Trim().ToUpper()??""}-{Baerer}---{Motpart}---";
+                if (DimensionIntegrationFormats != null && DimensionIntegrationFormats.Keys.Contains("DataEntityDefaultDimensionFormat"))
+                {
+                    //Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
+                    string[] FinancialDimensionFormatDefinitions = DimensionIntegrationFormats["DataEntityDefaultDimensionFormat"].FinancialDimensionFormat.Split("-");
+                    List<string> FinancialDimensionValues = new List<string>();
+                    foreach (string FinancialDimension in FinancialDimensionFormatDefinitions)
+                    {
+                        if (FinancialDimension == "Avdeling")
+                        {
+                            FinancialDimensionValues.Add(postedEntryLine.DepartmentNo?.Trim().ToUpper()??"");
+                        }
+                        else if (FinancialDimension == "Baerer")
+                        {
+                            FinancialDimensionValues.Add(Baerer);
+                        }
+                        else if (FinancialDimension == "Motpart")
+                        {
+                            FinancialDimensionValues.Add(Motpart);
+                        }
+                        else
+                        {
+                            FinancialDimensionValues.Add("");
+                        }
+                    }
+                    DefaultLedgerDimensionDisplayValue = string.Join("-", FinancialDimensionValues);
+                }
+
+                #endregion
+
                 PURCHPURCHASEORDERLINEV2ENTITY PurchaseOrderLine = new PURCHPURCHASEORDERLINEV2ENTITY
                 {
                     #region Fixed values
@@ -1550,7 +1775,8 @@
                     //2022-03-29: MainAccount-Avdeling-Generasjon-Aktivitet-Anleggsstatus-Baerer-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling-Art
                     //2022-03-31: MainAccount-Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
                     //2022-04-27: Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
-                    DEFAULTLEDGERDIMENSIONDISPLAYVALUE = $"--{postedEntryLine.DepartmentNo.Trim().ToUpper()}-{Baerer}---{Motpart}---",
+                    //DEFAULTLEDGERDIMENSIONDISPLAYVALUE = $"--{(postedEntryLine.DepartmentNo?.Trim().ToUpper()??"")}-{Baerer}---{Motpart}---",
+                    DEFAULTLEDGERDIMENSIONDISPLAYVALUE = DefaultLedgerDimensionDisplayValue,
                     ITEMNUMBER = postedEntryLine.AccountNo,
                     LINEAMOUNT = CurrencyAmount,
 
@@ -1570,8 +1796,10 @@
                     //KPMGNO-1256 (PO med flere fakturaer)
                     //REQUESTEDDELIVERYDATE = MTPEntry.DocumentDate,
                     REQUESTEDDELIVERYDATE = MTPEntryHeaderMaster.DocumentDate,
-
-                    SALESTAXITEMGROUPCODE = (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : postedEntryLine.VATCode))
+                    
+                    //2026-01-20: postedEntryLine.VATCode null handling
+                    //SALESTAXITEMGROUPCODE = (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : postedEntryLine.VATCode))
+                    SALESTAXITEMGROUPCODE = (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : (postedEntryLine.VATCode ?? "")))
                     #endregion
                 };
                 PurchaseOrderHeaderXML.PurchaseOrderLineV2Entities.Add(PurchaseOrderLine);
@@ -1580,7 +1808,7 @@
 
             return PurchaseOrderHeaderXML;
         }
-        private static LEDGERJOURNALENTITY ConvertGLEntry(string DocumentNr, MTDocument mtDoc, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, string Description, int LineNumber)
+        private static LEDGERJOURNALENTITY ConvertGLEntry(string DocumentNr, MTDocument mtDoc, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, string Description, int LineNumber, Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats)
         {
             List<LEDGERJOURNALENTITY> GLEntries = new List<LEDGERJOURNALENTITY>();
             //int LineNumber = 0;
@@ -1619,7 +1847,37 @@
                 //GLEntryLine.ACCOUNTDISPLAYVALUE = $"{postedEntryLine.AccountNo.Trim().ToUpper()}-{postedEntryLine.DepartmentNo.Trim().ToUpper()}----------";
                 //2022-03-31: MainAccount-Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
                 // Uses Ledger dimension format (DIM2)
-                GLEntryLine.ACCOUNTDISPLAYVALUE = $"{postedEntryLine.AccountNo.Trim().ToUpper()}---{postedEntryLine.DepartmentNo.Trim().ToUpper()}-------";
+
+                #region DEFAULTLEDGERDIMENSIONDISPLAYVALUE
+                //MainAccount-Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
+                string AccountDisplayValue = $"{postedEntryLine.AccountNo.Trim().ToUpper()}---{postedEntryLine.DepartmentNo?.Trim().ToUpper()??""}-------";
+                if (DimensionIntegrationFormats != null && DimensionIntegrationFormats.Keys.Contains("DataEntityLedgerDimensionFormat"))
+                {
+                    //Aktivitet-Anleggsstatus-Avdeling-Baerer-Generasjon-Leasinggjeld-Motpart-Prosjekt-Reisekode-Underavdeling
+                    string[] FinancialDimensionFormatDefinitions = DimensionIntegrationFormats["DataEntityLedgerDimensionFormat"].FinancialDimensionFormat.Split("-");
+                    List<string> FinancialDimensionValues = new List<string>();
+                    foreach (string FinancialDimension in FinancialDimensionFormatDefinitions)
+                    {
+                        if (FinancialDimension == "MainAccount")
+                        {
+                            FinancialDimensionValues.Add(postedEntryLine.AccountNo.Trim().ToUpper());
+                        }
+                        else if (FinancialDimension == "Avdeling")
+                        {
+                            FinancialDimensionValues.Add(postedEntryLine.DepartmentNo?.Trim().ToUpper()??"");
+                        }
+                        else
+                        {
+                            FinancialDimensionValues.Add("");
+                        }
+                    }
+                    AccountDisplayValue = string.Join("-", FinancialDimensionValues);
+                }
+
+                #endregion
+                
+                //GLEntryLine.ACCOUNTDISPLAYVALUE = $"{postedEntryLine.AccountNo.Trim().ToUpper()}---{postedEntryLine.DepartmentNo.Trim().ToUpper()}-------";
+                GLEntryLine.ACCOUNTDISPLAYVALUE = AccountDisplayValue;
 
                 //SIT 2022-03-29
                 GLEntryLine.CREDITAMOUNT = (CurrencyAmount < 0 ? (-1 * CurrencyAmount) : 0);

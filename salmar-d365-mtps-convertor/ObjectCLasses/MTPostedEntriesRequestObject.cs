@@ -18,5 +18,6 @@ namespace salmar_d365_mtps_convertor
         public string OverrideSalesOrderLineSalesTaxItemGroupCode { get; set; }
         public string OverrideSalesOrderLineItemNo { get; set; }
         public string PurchaseOrderMultiHeaderPoolId { get; set; }
+        public Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats { get; set; }
     }
 }
