@@ -201,22 +201,33 @@
                             cm.TermsOfPayment = cd.PaymentTerms.Trim();
 
                             cm.CreditLimit = cd.CreditLimit ?? 0;
-                            //P&S removed: 
-                            /*
-                            cm.CreditLimitDate = (
-                                (
-                                cd.CredManCreditLimitExpiryDate != null
-                                &&
-                                cd.CredManCreditLimitExpiryDate != DateTime.Parse("1900-01-01 12:00:00")
-                                )
-                                ?
-                                (cd.CredManCreditLimitExpiryDate ?? DateTime.MaxValue).ToString("yyyy-MM-dd")
-                                :
-                                DateTime.MaxValue.ToString("yyyy-MM-dd")
-                                );
-                            */
+
+                            if (cm.CreditLimit == 0 && cd.CustomerGroupId == "40")
+                            {
+                                cm.CreditLimit = null;
+                            }
+                            else if (cm.CreditLimit == 0 && cd.CustomerGroupId != "40")
+                            {
+                                cm.CreditLimit = 0;
+                            }
+
+                            cm.InsuranceLimit = 0;
+                                //P&S removed: 
+                                /*
+                                cm.CreditLimitDate = (
+                                    (
+                                    cd.CredManCreditLimitExpiryDate != null
+                                    &&
+                                    cd.CredManCreditLimitExpiryDate != DateTime.Parse("1900-01-01 12:00:00")
+                                    )
+                                    ?
+                                    (cd.CredManCreditLimitExpiryDate ?? DateTime.MaxValue).ToString("yyyy-MM-dd")
+                                    :
+                                    DateTime.MaxValue.ToString("yyyy-MM-dd")
+                                    );
+                                */
                             #region Guarantees & Insurances
-                            GuaranteeInsuranceD365 igD365 = GuaranteesInsurancesD365.Where(g =>
+                                GuaranteeInsuranceD365 igD365 = GuaranteesInsurancesD365.Where(g =>
                                 g.GuaranteeInsurance.ToUpper() == "INSURANCE"
                                 && g.CustAccount.Trim().ToUpper() == cd.CustomerAccount.Trim().ToUpper()
                                 && ((g.ValidFrom ?? DateTime.Parse("1900-01-01 12:00:00")) <= DateTime.Now)
@@ -258,6 +269,7 @@
                             }
                             else
                             {
+                                //cm.InsuranceLimit = 0;
                                 cm.InsuranceLimit = 0;
                                 //P&S removed: 
                                 /*
@@ -267,6 +279,16 @@
                                 cm.InsuranceGracePeriod = 0;
                                 */
                             }
+
+                            if (cm.InsuranceLimit == 0 && cd.CustomerGroupId == "40")
+                            {
+                                cm.InsuranceLimit = null;
+                            }
+                            else if (cm.InsuranceLimit == 0 && cd.CustomerGroupId != "40")
+                            {
+                                cm.InsuranceLimit = 0;
+                            }
+
                             #endregion
                             //P&S removed: 
                             /*
@@ -721,6 +743,7 @@
             RES.D365PurchaseOrdersXML = "";
             RES.ConvertedGLEntries = new List<ConversionResultMessageV2>();
             RES.FailedGLEntries = new List<ConversionResultMessageV2>();
+            RES.MessagesFilteredOut = new List<string>();
             //RES.D365GLEntriesXML = "";
             RES.StatusMessage = "";
             RES.Status = "Not executed";
@@ -762,15 +785,20 @@
                     //Documen Types: Set of codes describing type of document:
                     //               SF = Outgoing invoice, SK = Outgoing credit note,
                     //               KF = Incoming invoice, KK = Incoming credit note,
-                    //               IP = Internal posting, FF = Currency hedge, FC = Factoring 
-                    if (mtDoc[DocumentNr].postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK")).Any())
+                    //               IP = Internal posting, FF = Currency hedge, FC = Factoring (same as sales order)
+
+                    //2026-01-26: Removed: if (mtDoc[DocumentNr].postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK")).Any())
+                    //2026-01-26: Added:
+                    if (mtDoc[DocumentNr].postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK" || p.DocumentType.Trim().ToUpper() == "FC")).Any())
                     {
                         #region Sales Order
                         RunCnt++;
-                        MTPostedEntry MTPEntry = mtDoc[DocumentNr].postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK")).FirstOrDefault();
+                        //2026-01-26: removed: MTPostedEntry MTPEntry = mtDoc[DocumentNr].postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK")).FirstOrDefault();
+                        //2026-01-26: added:
+                        MTPostedEntry MTPEntry = mtDoc[DocumentNr].postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK" || p.DocumentType.Trim().ToUpper() == "FC")).FirstOrDefault();
                         try
                         {
-                            SALESORDERHEADERV2ENTITY SalesOrderHeaderXML = ConvertSalesOrder(DocumentNr, mtDoc[DocumentNr], CustomersD365, VATmaps, ShiftDateOlderThan, ShiftDateChangeTo, RequestObj.OverrideSalesOrderLineSalesTaxItemGroupCode, RequestObj.OverrideSalesOrderLineItemNo, ExchangeRatesD365, RequestObj.DimensionIntegrationFormats);
+                            SALESORDERHEADERV2ENTITY SalesOrderHeaderXML = ConvertSalesOrder(DocumentNr, mtDoc[DocumentNr], CustomersD365, VATmaps, ShiftDateOlderThan, ShiftDateChangeTo, RequestObj.OverrideSalesOrderLineSalesTaxItemGroupCode, RequestObj.OverrideSalesOrderLineItemNo, ExchangeRatesD365, RequestObj.ExchangeRateFactorsD365.Where(f => f.IntegrationId.Trim().ToUpper() == RequestObj.ExchangeRateFactorIntegrationId.Trim().ToUpper()).ToList(), RequestObj.DimensionIntegrationFormats, RequestObj.MaritechPSSalesOrderDefaultSalesTaxItemGroupCode, RequestObj.MaritechPSSalesOrderPennyDifferenceAccountNr);
                             string XMLstr = $"<Document>{XMLStringFromObject(SalesOrderHeaderXML)}</Document>";
                             RES.ConvertedSalesOrders.Add(
                                 new ConversionResultMessageV2
@@ -815,23 +843,30 @@
                         List<MTPostedEntry> MTPEntries = mtDoc[DocumentNr].postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "L" && (p.DocumentType.Trim().ToUpper() == "KF" || p.DocumentType.Trim().ToUpper() == "KK")).ToList();
                         try
                         {
-                            PURCHPURCHASEORDERHEADERV2ENTITY PurchaseOrderHeaderXML = ConvertPurchaseOrder(DocumentNr, mtDoc[DocumentNr], VendorsD365, VATmaps, ShiftDateOlderThan, ShiftDateChangeTo, ExchangeRatesD365, PurchaseOrderMultiHeaderPoolId, RequestObj.DimensionIntegrationFormats);
-                            string XMLstr = $"<Document>{XMLStringFromObject(PurchaseOrderHeaderXML)}</Document>";
-                            RES.ConvertedPurchaseOrders.Add(
-                                new ConversionResultMessageV2
-                                {
-                                    PostedEntryMessageId = MTPEntry.MaritechMessageId,
-                                    StatusMessage = $"Successfully converted document Number={MTPEntry.DocumentNo}, Type={MTPEntry.DocumentType}, VendorNo={MTPEntry.VendorNo} {(PurchaseOrderHeaderXML.MBSMARITECHINVOICEDATE != PurchaseOrderHeaderXML.REQUESTEDDELIVERYDATE ? ("(Invoice date changed from " + PurchaseOrderHeaderXML.REQUESTEDDELIVERYDATE + " to " + PurchaseOrderHeaderXML.MBSMARITECHINVOICEDATE) + ")" : "")}",
-                                    Type = MTPEntry.DocumentType,
-                                    SalesOrder = null,
-                                    PurchaseOrder = PurchaseOrderHeaderXML,
-                                    LedgerJournalEntity = null,
-                                    LedgerJournalEntityXML = ""
-                                }
-                                );
-                            RES.StatusMessage += $"<LI>Successfully converted document Number={MTPEntry.DocumentNo}, Type={MTPEntry.DocumentType}, VendorNo={MTPEntry.VendorNo}, MaritechMessageId={MTPEntry.MaritechMessageId} {(PurchaseOrderHeaderXML.MBSMARITECHINVOICEDATE != PurchaseOrderHeaderXML.REQUESTEDDELIVERYDATE ? ("<b>(Invoice date changed from " + PurchaseOrderHeaderXML.REQUESTEDDELIVERYDATE + " to " + PurchaseOrderHeaderXML.MBSMARITECHINVOICEDATE) + ")</b>" : "")}</LI>";
-                            RES.D365PurchaseOrdersXML += XMLstr;
-
+                            if (RequestObj.MaritechPSFilterVendors == "" || (RequestObj.MaritechPSFilterVendors.Split(';').ToList().Contains((MTPEntry.VendorNo??""))))
+                            { 
+                                PURCHPURCHASEORDERHEADERV2ENTITY PurchaseOrderHeaderXML = ConvertPurchaseOrder(DocumentNr, mtDoc[DocumentNr], VendorsD365, VATmaps, ShiftDateOlderThan, ShiftDateChangeTo, ExchangeRatesD365, RequestObj.ExchangeRateFactorsD365.Where(f => f.IntegrationId.Trim().ToUpper() == RequestObj.ExchangeRateFactorIntegrationId.Trim().ToUpper()).ToList(), PurchaseOrderMultiHeaderPoolId, RequestObj.DimensionIntegrationFormats);
+                                string XMLstr = $"<Document>{XMLStringFromObject(PurchaseOrderHeaderXML)}</Document>";
+                                RES.ConvertedPurchaseOrders.Add(
+                                    new ConversionResultMessageV2
+                                    {
+                                        PostedEntryMessageId = MTPEntry.MaritechMessageId,
+                                        StatusMessage = $"Successfully converted document Number={MTPEntry.DocumentNo}, Type={MTPEntry.DocumentType}, VendorNo={MTPEntry.VendorNo} {(PurchaseOrderHeaderXML.MBSMARITECHINVOICEDATE != PurchaseOrderHeaderXML.REQUESTEDDELIVERYDATE ? ("(Invoice date changed from " + PurchaseOrderHeaderXML.REQUESTEDDELIVERYDATE + " to " + PurchaseOrderHeaderXML.MBSMARITECHINVOICEDATE) + ")" : "")}",
+                                        Type = MTPEntry.DocumentType,
+                                        SalesOrder = null,
+                                        PurchaseOrder = PurchaseOrderHeaderXML,
+                                        LedgerJournalEntity = null,
+                                        LedgerJournalEntityXML = ""
+                                    }
+                                    );
+                                RES.StatusMessage += $"<LI>Successfully converted document Number={MTPEntry.DocumentNo}, Type={MTPEntry.DocumentType}, VendorNo={MTPEntry.VendorNo}, MaritechMessageId={MTPEntry.MaritechMessageId} {(PurchaseOrderHeaderXML.MBSMARITECHINVOICEDATE != PurchaseOrderHeaderXML.REQUESTEDDELIVERYDATE ? ("<b>(Invoice date changed from " + PurchaseOrderHeaderXML.REQUESTEDDELIVERYDATE + " to " + PurchaseOrderHeaderXML.MBSMARITECHINVOICEDATE) + ")</b>" : "")}</LI>";
+                                RES.D365PurchaseOrdersXML += XMLstr;
+                            }
+                            else
+                            {
+                                RES.MessagesFilteredOut.Add(MTPEntry.MaritechMessageId);
+                                RES.StatusMessage += $"<LI>Vendor {(MTPEntry.VendorNo??"")} not in list MaritechPSFilterVendors (Document Number={MTPEntry.DocumentNo}, Type={MTPEntry.DocumentType}, VendorNo={MTPEntry.VendorNo}, MaritechMessageId={MTPEntry.MaritechMessageId} )</b></LI>";
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -870,7 +905,7 @@
                         RunCnt++;
                         try
                         {
-                            LEDGERJOURNALENTITY GLEntry = ConvertGLEntry(DocumentNr, mtDoc[DocumentNr], ExchangeRatesD365, GLEntryDescription, GLEntryLineNr, RequestObj.DimensionIntegrationFormats);
+                            LEDGERJOURNALENTITY GLEntry = ConvertGLEntry(DocumentNr, mtDoc[DocumentNr], ExchangeRatesD365, RequestObj.ExchangeRateFactorsD365.Where(f => f.IntegrationId.Trim().ToUpper() == RequestObj.ExchangeRateFactorIntegrationId.Trim().ToUpper()).ToList(), GLEntryDescription, GLEntryLineNr, RequestObj.DimensionIntegrationFormats);
                             foreach (LedgerJournalEntityLine GLEntryLine in GLEntry.LedgerJournalEntityLines)
                             {
                                 GLEntryLineNr++;
@@ -914,6 +949,16 @@
 
 
                         #endregion
+                    }
+                    else
+                    {
+                        /*
+                        foreach (MTPostedEntry MTPEntryFilteredOut in mtDoc[DocumentNr].postedEntries)
+                        { 
+                            RES.MessagesFilteredOut = RES.MessagesFilteredOut.Join.Add(MTPEntryFilteredOut.MaritechMessageId);
+                        }
+                        */
+                        RES.StatusMessage += $"<LI>Entries (DocumentType { string.Join(",",(mtDoc[DocumentNr].postedEntries.Select(e => e.DocumentType.ToString()))) }, RegistrationType {string.Join(",", (mtDoc[DocumentNr].postedEntries.Select(e => e.RegistrationType.ToString())))}, Code {string.Join(",", (mtDoc[DocumentNr].postedEntries.Select(e => e.Code.ToString())))} in Document Number={DocumentNr} unknown.</LI>";
                     }
                 }
                 /*
@@ -979,9 +1024,7 @@
         }
 
         [FunctionName("ZIPme")]
-        public static async Task<IActionResult> ZipMe(
-            [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
-            ILogger log)
+        public static async Task<IActionResult> ZipMe([HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req, ILogger log)
         {
             log.LogInformation($"ZIPme HTTP triggered {req.Method} request");
             try
@@ -1002,9 +1045,7 @@
         }
 
         [FunctionName("UNZIPme")]
-        public static async Task<IActionResult> UnZipMe(
-           [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
-           ILogger log)
+        public static async Task<IActionResult> UnZipMe([HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req, ILogger log)
         {
             log.LogInformation($"UNZIPme HTTP triggered {req.Method} request");
             try
@@ -1136,6 +1177,41 @@
             }
             catch (Exception ex)
             { }
+            try
+            {
+                string R_MaritechPSFilterVendors = RequestJSON.MaritechPSFilterVendors.ToString();
+                RES.MaritechPSFilterVendors = R_MaritechPSFilterVendors.Trim();
+            }
+            catch (Exception ex)
+            { }
+            try
+            {
+                string R_MaritechPSSalesOrderDefaultSalesTaxItemGroupCode = RequestJSON.MaritechPSSalesOrderDefaultSalesTaxItemGroupCode.ToString();
+                RES.MaritechPSSalesOrderDefaultSalesTaxItemGroupCode = R_MaritechPSSalesOrderDefaultSalesTaxItemGroupCode.Trim();
+            }
+            catch (Exception ex)
+            { }
+            try
+            {
+                string R_MaritechPSSalesOrderPennyDifferenceAccountNr = RequestJSON.MaritechPSSalesOrderPennyDifferenceAccountNr.ToString();
+                RES.MaritechPSSalesOrderPennyDifferenceAccountNr = R_MaritechPSSalesOrderPennyDifferenceAccountNr.Trim();
+            }
+            catch (Exception ex)
+            { }
+            try
+            {
+                string R_ExhangeRateFactors = RequestJSON.ExchangeRateFactors.ToString();
+                RES.ExchangeRateFactorsD365 = JsonConvert.DeserializeObject<List<ExchangeRateFactorD365>>(R_ExhangeRateFactors);
+            }
+            catch (Exception ex)
+            { }
+
+            try
+            {
+                RES.ExchangeRateFactorIntegrationId = RequestJSON.ExchangeRateFactorIntegrationId.ToString();
+            }
+            catch (Exception ex)
+            { }
             #endregion
 
             Dictionary<string, MTDocument> mtDoc = new Dictionary<string, MTDocument>();
@@ -1207,11 +1283,13 @@
 
             return RES;
         }
-        private static SALESORDERHEADERV2ENTITY ConvertSalesOrder(string DocumentNr, MTDocument mtDoc, Dictionary<string, CustomerD365> CustomersD365, List<VATmap> VATMaps, DateTime? ShiftDateOlderThan, DateTime? ShiftDateChangeTo, string OverrideSalesOrderLineSalesTaxItemGroupCode, string OverrideSalesOrderLineItemNo, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats)
+        private static SALESORDERHEADERV2ENTITY ConvertSalesOrder(string DocumentNr, MTDocument mtDoc, Dictionary<string, CustomerD365> CustomersD365, List<VATmap> VATMaps, DateTime? ShiftDateOlderThan, DateTime? ShiftDateChangeTo, string OverrideSalesOrderLineSalesTaxItemGroupCode, string OverrideSalesOrderLineItemNo, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, List<ExchangeRateFactorD365> ExchangeRateFactorsD365, Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats, string SalesOrderDefaultSalesTaxItemGroupCode, string SalesOrderPennyDifferenceAccountNr)
         {
             SALESORDERHEADERV2ENTITY SalesOrderHeaderXML = new SALESORDERHEADERV2ENTITY();
             SalesOrderHeaderXML.SalesOrderLineV2Entity = new List<SALESORDERLINEV2ENTITY>();
-            MTPostedEntry MTPEntry = mtDoc.postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK")).FirstOrDefault();
+            //2026-01-26 removed: MTPostedEntry MTPEntry = mtDoc.postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK")).FirstOrDefault();
+            //2026-01-26 added:
+            MTPostedEntry MTPEntry = mtDoc.postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "1" && p.Code.Trim().ToUpper() == "K" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK" || p.DocumentType.Trim().ToUpper() == "FC")).FirstOrDefault();
             int TotalQTY = 0;
 
             #region TotalQTY In case we get fakturaXML
@@ -1228,6 +1306,49 @@
             decimal postedEntryAmount = decimal.Round(decimal.Parse(MTPEntry.Amount, System.Globalization.CultureInfo.InvariantCulture), 2);
             decimal postedEntryCurrencyAmount = decimal.Round(decimal.Parse(MTPEntry.CurrencyAmount, System.Globalization.CultureInfo.InvariantCulture), 2);
             decimal MultiplicationFactor = 1;
+
+            #region Exchange rate factor 2026-01-27
+            decimal MTCurrencyFactor = 1;
+            decimal D365CurrencyFactor = 1;
+
+            ExchangeRateD365 ExchRateD365 = ExchangeRatesD365.GetValueOrDefault(MTPEntry.CurrencyCode.Trim().ToUpper());
+            if (ExchRateD365 != null)
+            {
+                switch (ExchRateD365.ConversionFactor.Trim().ToUpper())
+                {
+                    case "ONE":
+                    {
+                        D365CurrencyFactor = 1;
+                        break;
+                    }
+                    case "TEN":
+                    {
+                        D365CurrencyFactor = 10;
+                        break;
+                    }
+                    case "HUNDRED":
+                    {
+                        D365CurrencyFactor = 100;
+                        break;
+                    }
+                    case "THOUSAND":
+                    {
+                        D365CurrencyFactor = 1000;
+                        break;
+                    }
+                    case "TENTHOUSANDS":
+                    {
+                        D365CurrencyFactor = 10000;
+                        break;
+                    }
+                }
+            }
+
+            MTCurrencyFactor = ExchangeRateFactorsD365.Where(f => f.CurrencyCode.Trim().ToUpper() == MTPEntry.CurrencyCode.Trim().ToUpper()).FirstOrDefault()?.FactorValue ?? 1;
+
+            MultiplicationFactor = (D365CurrencyFactor == 1 ? 100 : D365CurrencyFactor) / MTCurrencyFactor;
+
+            #endregion
 
             #region Exchange Rate Factor - should be remove as its OK for Sales Orders
             /*
@@ -1342,7 +1463,9 @@
             int LineCounter = 0;
 
             //Sales Order Lines
-            foreach (MTPostedEntry postedEntryLine in mtDoc.postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "3" && p.Code.Trim().ToUpper() == "H" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK")).ToList())
+            //2026-01-26 removed: foreach (MTPostedEntry postedEntryLine in mtDoc.postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "3" && p.Code.Trim().ToUpper() == "H" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK")).ToList())
+            //2026-01-26 added:
+            foreach (MTPostedEntry postedEntryLine in mtDoc.postedEntries.Where(p => p.RegistrationType.Trim().ToUpper() == "3" && p.Code.Trim().ToUpper() == "H" && (p.DocumentType.Trim().ToUpper() == "SF" || p.DocumentType.Trim().ToUpper() == "SK" || p.DocumentType.Trim().ToUpper() == "FC")).ToList())
             {
                 #region SalesOrderLine
                 LineCounter++;
@@ -1399,6 +1522,14 @@
 
                 #endregion
 
+                #region SalesTaxItemGroupCode
+                string SalesTaxItemGroupCode = SalesOrderDefaultSalesTaxItemGroupCode;
+                if ((OverrideSalesOrderLineItemNo != "" && OverrideSalesOrderLineItemNo != null ? OverrideSalesOrderLineItemNo : postedEntryLine.AccountNo.Trim().ToUpper()) != SalesOrderPennyDifferenceAccountNr)
+                {
+                    SalesTaxItemGroupCode = (OverrideSalesOrderLineSalesTaxItemGroupCode != "" && OverrideSalesOrderLineSalesTaxItemGroupCode != null ? OverrideSalesOrderLineSalesTaxItemGroupCode : (VATMaps.Count == 0 ? (postedEntryLine.VATCode ?? SalesOrderDefaultSalesTaxItemGroupCode) : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : (postedEntryLine.VATCode ?? SalesOrderDefaultSalesTaxItemGroupCode))));
+                }
+                #endregion
+                
                 SALESORDERLINEV2ENTITY SalesOrderLineXML = new SALESORDERLINEV2ENTITY
                 {
                     #region fixed values
@@ -1445,9 +1576,10 @@
                     //SALESTAXITEMGROUPCODE = (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : postedEntryLine.VATCode))
                     //2022-05-22: Request from Thomas for migration
 
-                    //2026-01-20: postedEntryLine.VATCode null handling
+                    //2026-01-20: postedEntryLine.VATCode null handling => V0
                     //SALESTAXITEMGROUPCODE = (OverrideSalesOrderLineSalesTaxItemGroupCode != "" && OverrideSalesOrderLineSalesTaxItemGroupCode != null ? OverrideSalesOrderLineSalesTaxItemGroupCode : (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : postedEntryLine.VATCode)))
-                    SALESTAXITEMGROUPCODE = (OverrideSalesOrderLineSalesTaxItemGroupCode != "" && OverrideSalesOrderLineSalesTaxItemGroupCode != null ? OverrideSalesOrderLineSalesTaxItemGroupCode : (VATMaps.Count == 0 ? postedEntryLine.VATCode : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : (postedEntryLine.VATCode ?? ""))))
+                    //SALESTAXITEMGROUPCODE = (OverrideSalesOrderLineSalesTaxItemGroupCode != "" && OverrideSalesOrderLineSalesTaxItemGroupCode != null ? OverrideSalesOrderLineSalesTaxItemGroupCode : (VATMaps.Count == 0 ? (postedEntryLine.VATCode ?? SalesOrderDefaultSalesTaxItemGroupCode) : (VATMaps.Where(m => m.MaritechCode == postedEntryLine.VATCode).Any() ? VATMaps.Where(m => m.MaritechCode.Trim().ToUpper() == postedEntryLine.VATCode.Trim().ToUpper()).FirstOrDefault().D365Code : (postedEntryLine.VATCode ?? SalesOrderDefaultSalesTaxItemGroupCode))))
+                    SALESTAXITEMGROUPCODE = SalesTaxItemGroupCode
                     #endregion
                 };
                 SalesOrderHeaderXML.SalesOrderLineV2Entity.Add(SalesOrderLineXML);
@@ -1457,7 +1589,7 @@
 
             return SalesOrderHeaderXML;
         }
-        private static PURCHPURCHASEORDERHEADERV2ENTITY ConvertPurchaseOrder(string DocumentNr, MTDocument mtDoc, Dictionary<string, VendorD365> VendorsD365, List<VATmap> VATMaps, DateTime? ShiftDateOlderThan, DateTime? ShiftDateChangeTo, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, string PurchaseOrderMultiHeaderPoolId, Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats)
+        private static PURCHPURCHASEORDERHEADERV2ENTITY ConvertPurchaseOrder(string DocumentNr, MTDocument mtDoc, Dictionary<string, VendorD365> VendorsD365, List<VATmap> VATMaps, DateTime? ShiftDateOlderThan, DateTime? ShiftDateChangeTo, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, List<ExchangeRateFactorD365> ExchangeRateFactorsD365, string PurchaseOrderMultiHeaderPoolId, Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats)
         {
             PURCHPURCHASEORDERHEADERV2ENTITY PurchaseOrderHeaderXML = new PURCHPURCHASEORDERHEADERV2ENTITY();
             PurchaseOrderHeaderXML.PurchaseOrderLineV2Entities = new List<PURCHPURCHASEORDERLINEV2ENTITY>();
@@ -1474,6 +1606,48 @@
             }
 
             decimal HeaderMultiplicationFactor = 1;
+
+            #region Exchange rate factor 2026-01-27
+            decimal MTCurrencyFactor = 1;
+            decimal D365CurrencyFactor = 1;
+
+            ExchangeRateD365 ExchRateD365 = ExchangeRatesD365.GetValueOrDefault(MTPEntryHeaderMaster.CurrencyCode.Trim().ToUpper());
+            if (ExchRateD365 != null)
+            {
+                switch (ExchRateD365.ConversionFactor.Trim().ToUpper())
+                {
+                    case "ONE":
+                    {
+                        D365CurrencyFactor = 1;
+                        break;
+                    }
+                    case "TEN":
+                    {
+                        D365CurrencyFactor = 10;
+                        break;
+                    }
+                    case "HUNDRED":
+                    {
+                        D365CurrencyFactor = 100;
+                        break;
+                    }
+                    case "THOUSAND":
+                    {
+                        D365CurrencyFactor = 1000;
+                        break;
+                    }
+                    case "TENTHOUSANDS":
+                    {
+                        D365CurrencyFactor = 10000;
+                        break;
+                    }
+                }
+            }
+
+            MTCurrencyFactor = ExchangeRateFactorsD365.Where(f => f.CurrencyCode.Trim().ToUpper() == MTPEntryHeaderMaster.CurrencyCode.Trim().ToUpper()).FirstOrDefault()?.FactorValue ?? 1;
+
+            HeaderMultiplicationFactor = (D365CurrencyFactor == 1 ? 100 : D365CurrencyFactor) / MTCurrencyFactor;
+            #endregion
 
             #region Exchange Rate Factor - to be removed when D365 is adjusted KPMGNO-1135 (Column 'MBSFixedExchRate' on purchase order doesn't consider conversion factor) 2022-09-30
             /*
@@ -1808,7 +1982,7 @@
 
             return PurchaseOrderHeaderXML;
         }
-        private static LEDGERJOURNALENTITY ConvertGLEntry(string DocumentNr, MTDocument mtDoc, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, string Description, int LineNumber, Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats)
+        private static LEDGERJOURNALENTITY ConvertGLEntry(string DocumentNr, MTDocument mtDoc, Dictionary<string, ExchangeRateD365> ExchangeRatesD365, List<ExchangeRateFactorD365> ExchangeRateFactorsD365, string Description, int LineNumber, Dictionary<string, DimensionIntegrationFormat> DimensionIntegrationFormats)
         {
             List<LEDGERJOURNALENTITY> GLEntries = new List<LEDGERJOURNALENTITY>();
             //int LineNumber = 0;
@@ -1816,11 +1990,53 @@
             GLEntry.LedgerJournalEntityLines = new List<LedgerJournalEntityLine>();
             foreach (MTPostedEntry postedEntryLine in mtDoc.postedEntries)
             {
+                decimal HeaderMultiplicationFactor = 1;
+                #region Exchange rate factor 2026-01-27
+                decimal MTCurrencyFactor = 1;
+                decimal D365CurrencyFactor = 1;
+
+                ExchangeRateD365 ExchRateD365 = ExchangeRatesD365.GetValueOrDefault(postedEntryLine.CurrencyCode.Trim().ToUpper());
+                if (ExchRateD365 != null)
+                {
+                    switch (ExchRateD365.ConversionFactor.Trim().ToUpper())
+                    {
+                        case "ONE":
+                        {
+                            D365CurrencyFactor = 1;
+                            break;
+                        }
+                        case "TEN":
+                        {
+                            D365CurrencyFactor = 10;
+                            break;
+                        }
+                        case "HUNDRED":
+                        {
+                            D365CurrencyFactor = 100;
+                            break;
+                        }
+                        case "THOUSAND":
+                        {
+                            D365CurrencyFactor = 1000;
+                            break;
+                        }
+                        case "TENTHOUSANDS":
+                        {
+                            D365CurrencyFactor = 10000;
+                            break;
+                        }
+                    }
+                }
+
+                MTCurrencyFactor = ExchangeRateFactorsD365.Where(f => f.CurrencyCode.Trim().ToUpper() == postedEntryLine.CurrencyCode.Trim().ToUpper()).FirstOrDefault()?.FactorValue ?? 1;
+
+                HeaderMultiplicationFactor = D365CurrencyFactor / MTCurrencyFactor;
+                #endregion
                 LineNumber++;
                 LedgerJournalEntityLine GLEntryLine = new LedgerJournalEntityLine();
                 decimal CurrencyAmount = decimal.Parse(postedEntryLine.CurrencyAmount.Trim());
-                decimal ExchangeRate = decimal.Parse(postedEntryLine.ExchangeRate.Trim());
-
+                //decimal ExchangeRate = decimal.Round((decimal.Parse(postedEntryLine.ExchangeRate.Trim());
+                decimal ExchangeRate = decimal.Round((decimal.Parse(postedEntryLine.ExchangeRate.Trim(), System.Globalization.CultureInfo.InvariantCulture) * HeaderMultiplicationFactor), 6);
                 #region fixed values
                 GLEntryLine.ACCOUNTTYPE = "Ledger";
                 GLEntryLine.DEFAULTDIMENSIONDISPLAYVALUE = "";

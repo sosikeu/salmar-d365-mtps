@@ -26,9 +26,9 @@ namespace salmar_d365_mtps_convertor
         public int SubjectToVAT { get; set; }
         public int CorporateCustomer { get; set; }
         //public string ExtCustomerNo { get; set; }
-        public decimal CreditLimit { get; set; }
+        public decimal? CreditLimit { get; set; }
         //P&S removed: public string CreditLimitDate { get; set; }
-        public decimal InsuranceLimit { get; set; }
+        public decimal? InsuranceLimit { get; set; }
         //P&S removed: public string InsuranceValidTo { get; set; }
         public int UseFactoringCompany { get; set; }
         public int AccumulatedInvoice { get; set; }

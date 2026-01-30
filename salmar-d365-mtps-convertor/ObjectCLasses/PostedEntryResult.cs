@@ -30,5 +30,6 @@ namespace salmar_d365_mtps_convertor
         public List<ConversionResultMessageV2> FailedGLEntries { get; set; }
         public string Status { get; set; }
         public string StatusMessage { get; set; }
+        public List<string> MessagesFilteredOut { get; set; }
     }
 }
